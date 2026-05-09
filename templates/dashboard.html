@@ -349,6 +349,91 @@
     .log-threat { color: var(--red); }
     .log-sys { color: var(--blue); }
 
+    /* ── Upload zone ── */
+    .upload-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px;
+      margin-bottom: 24px;
+    }
+
+    .upload-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .upload-title i { color: var(--blue); }
+
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.drag-over {
+      border-color: var(--blue);
+      background: rgba(88,166,255,0.04);
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-icon { color: var(--muted); font-size: 2rem; margin-bottom: 10px; }
+    .drop-text { color: var(--muted); font-size: 0.85rem; line-height: 1.6; }
+    .drop-text strong { color: var(--blue); }
+
+    .upload-result {
+      margin-top: 16px;
+      display: none;
+      border-radius: 8px;
+      padding: 16px;
+      border: 1px solid var(--border);
+    }
+
+    .upload-result.safe   { border-color: var(--green); background: rgba(63,185,80,0.06); }
+    .upload-result.threat { border-color: var(--red);   background: rgba(248,81,73,0.06); }
+    .upload-result.medium { border-color: var(--orange); background: rgba(210,153,34,0.06); }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .result-verdict {
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    .result-text {
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.6;
+      font-family: 'Consolas', monospace;
+      white-space: pre-wrap;
+      max-height: 90px;
+      overflow-y: auto;
+    }
+
+    .upload-spinner { display: none; text-align: center; padding: 18px; color: var(--muted); font-size: 0.85rem; }
+
     /* ── Responsive ── */
     @media (max-width: 900px) {
       .stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -395,6 +480,35 @@
     <div class="stat-card">
       <div class="stat-label"><i class="fa-solid fa-chart-pie"></i> Detection Rate</div>
       <div class="stat-value orange" id="stat-rate">0.0%</div>
+    </div>
+  </div>
+
+  <!-- Upload section -->
+  <div class="upload-section">
+    <div class="upload-title">
+      <i class="fa-solid fa-image"></i>
+      Scan an Image for Phishing
+    </div>
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept="image/*" onchange="handleFileSelect(this.files[0])">
+      <div class="drop-icon"><i class="fa-solid fa-cloud-arrow-up"></i></div>
+      <div class="drop-text">
+        <strong>Click to upload</strong> or drag & drop an image<br>
+        Screenshots, emails, SMS — JPG, PNG, WebP (max 10 MB)
+      </div>
+    </div>
+
+    <div class="upload-spinner" id="upload-spinner">
+      <i class="fa-solid fa-spinner fa-spin"></i> Analyzing image...
+    </div>
+
+    <div class="upload-result" id="upload-result">
+      <div class="result-header">
+        <span class="result-verdict" id="result-verdict"></span>
+        <span id="result-badge"></span>
+      </div>
+      <div class="result-text" id="result-text"></div>
     </div>
   </div>
 
@@ -593,6 +707,54 @@
 
   /* Initial empty render */
   renderTable([]);
+
+  /* ── Image upload ── */
+  const dropZone = document.getElementById('drop-zone');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) handleFileSelect(file);
+  });
+
+  async function handleFileSelect(file) {
+    if (!file) return;
+
+    const spinner = document.getElementById('upload-spinner');
+    const result  = document.getElementById('upload-result');
+    result.style.display = 'none';
+    spinner.style.display = 'block';
+
+    const form = new FormData();
+    form.append('image', file);
+
+    try {
+      const res  = await fetch('/api/upload', { method: 'POST', body: form });
+      const data = await res.json();
+
+      spinner.style.display = 'none';
+      result.style.display  = 'block';
+
+      const score = data.score;
+      result.className = 'upload-result ' + (score >= 6 ? 'threat' : score >= 3 ? 'medium' : 'safe');
+
+      document.getElementById('result-verdict').textContent = data.explanation;
+      document.getElementById('result-badge').innerHTML = badge(score);
+      document.getElementById('result-text').textContent =
+        data.text_extracted ? 'Extracted text:\n' + data.text_extracted : 'No text could be extracted from the image.';
+
+      log(`Image scan: ${data.explanation}`, score >= 3 ? 'threat' : 'safe');
+    } catch (err) {
+      spinner.style.display = 'none';
+      result.style.display  = 'block';
+      result.className = 'upload-result';
+      document.getElementById('result-verdict').textContent = 'Upload error — please try again.';
+      document.getElementById('result-text').textContent = '';
+    }
+  }
 </script>
 </body>
 </html>

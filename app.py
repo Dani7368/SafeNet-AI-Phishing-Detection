@@ -4,10 +4,12 @@ import io
 from flask import Flask, render_template, jsonify, request, Response
 from flask_socketio import SocketIO
 from datetime import datetime
+from PIL import Image
 from detector import PhishingDetector, SAMPLE_PHISHING_ENTRIES
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'safenet-2024'
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB max upload
 socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 
 detections = []
@@ -17,10 +19,13 @@ stats = {
     "last_scan": "Never",
 }
 
+detector = PhishingDetector()
 
-def handle_scan(score, is_phishing, explanation):
+
+def record_scan(score, is_phishing, explanation, text="", sender="Image Upload"):
     stats["total_scans"] += 1
     stats["last_scan"] = datetime.now().strftime('%H:%M:%S')
+
     socketio.emit('scan_update', {
         "total_scans": stats["total_scans"],
         "threats_detected": stats["threats_detected"],
@@ -29,20 +34,56 @@ def handle_scan(score, is_phishing, explanation):
         "is_phishing": is_phishing,
     })
 
+    if is_phishing:
+        stats["threats_detected"] += 1
+        now = datetime.now()
+        snippet = text.replace("\n", " ").strip()
+        entry = {
+            "date": now.strftime('%Y-%m-%d'),
+            "time": now.strftime('%H:%M:%S'),
+            "text": (snippet[:150] + "...") if len(snippet) > 150 else snippet,
+            "sender": sender,
+            "score": score,
+            "explanation": explanation,
+        }
+        detections.append(entry)
+        socketio.emit('phishing_detected', entry)
+        return entry
 
-def handle_detection(entry):
-    stats["threats_detected"] += 1
-    detections.append(entry)
-    socketio.emit('phishing_detected', entry)
-
-
-detector = PhishingDetector(on_scan=handle_scan, on_detection=handle_detection)
-detector.start()
+    return None
 
 
 @app.route('/')
 def index():
     return render_template('dashboard.html')
+
+
+@app.route('/api/upload', methods=['POST'])
+def upload_image():
+    if 'image' not in request.files:
+        return jsonify({"error": "No image provided"}), 400
+
+    file = request.files['image']
+    if not file.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
+    try:
+        image = Image.open(file.stream).convert('RGB')
+    except Exception:
+        return jsonify({"error": "Invalid image file"}), 400
+
+    score, explanation, text = detector.analyze_image(image)
+    is_phishing = score >= 3
+
+    entry = record_scan(score, is_phishing, explanation, text, sender="Image Upload")
+
+    return jsonify({
+        "score": score,
+        "explanation": explanation,
+        "is_phishing": is_phishing,
+        "text_extracted": text[:300] if text else "",
+        "entry": entry,
+    })
 
 
 @app.route('/api/stats')
@@ -64,17 +105,21 @@ def get_detections():
 def simulate():
     sample = random.choice(SAMPLE_PHISHING_ENTRIES)
     now = datetime.now()
+    score = random.randint(6, 10)
     entry = {
         "date": now.strftime('%Y-%m-%d'),
         "time": now.strftime('%H:%M:%S'),
         "text": sample["text"],
         "sender": sample["sender"],
-        "score": random.randint(6, 10),
-        "explanation": "Simulated phishing attempt for demo",
+        "score": score,
+        "explanation": f"HIGH RISK — Phishing score: {score}/10",
     }
     detections.append(entry)
     stats["threats_detected"] += 1
+    stats["total_scans"] += 1
+    stats["last_scan"] = now.strftime('%H:%M:%S')
     socketio.emit('phishing_detected', entry)
+    socketio.emit('scan_update', {**stats, "score": score, "is_phishing": True})
     return jsonify(entry)
 
 
@@ -92,5 +137,5 @@ def export_csv():
 
 
 if __name__ == '__main__':
-    print("🛡️  SafeNet AI starting on http://localhost:5000")
+    print("SafeNet AI starting on http://localhost:5000")
     socketio.run(app, host='0.0.0.0', port=5000, debug=False)
