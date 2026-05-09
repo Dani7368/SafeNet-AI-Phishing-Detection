@@ -1,0 +1,95 @@
+# Skeleton.py
+# This script is a skeleton for the SafeNet application
+# It is used to test the OCR functionality of the SafeNet application
+
+import time # For timing
+import pyautogui # For screenshot capture
+import pytesseract # For OCR
+import tkinter as tk # For GUI
+from tkinter import font # For font
+import torch # For PyTorch
+from transformers import BertTokenizer, BertForSequenceClassification # For BERT model
+import threading # For threading
+
+# Load the pre-trained BERT model and tokenizer
+# This is the model that will be used to classify the text as phishing or safe
+MODEL_PATH = "bert_phishing_model.pt"  # Update with the actual model path
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased") # This is the tokenizer for the BERT model
+model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=2)  
+model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu'))) 
+model.eval()   
+
+# General settings
+MIN_PHISHING_SCORE = 2  # Range: 1-10, determines when to trigger a warning
+POPUP_WARNING_TIMEOUT_SECONDS = 20
+# This is the path to the Tesseract OCR executable
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# Control variable for stopping the loop
+stop_event = threading.Event()
+
+def get_screen_text():
+    """Takes a screenshot and extracts text using OCR"""
+    screenshot = pyautogui.screenshot()
+    return pytesseract.image_to_string(screenshot)
+
+def show_popup(phishing_score, popup_text, timeout):
+    """Displays a warning popup when a phishing attempt is detected"""
+    window = tk.Tk()
+    window.title("⚠️ Phishing Alert!")  # Window title
+    window.geometry("500x300")  # Window size (Width x Height)
+    window.attributes('-topmost', 1)  # Ensures the popup is always on top
+    window.configure(bg="white")  # Background color
+
+    # Auto-close after timeout
+    window.after(timeout * 1000, lambda: window.destroy())
+
+    # Header text (Phishing Score)
+    label_header = tk.Label(window, text=f'⚠️ Phishing Detected! Score: {phishing_score}',
+                            foreground="red", font=font.Font(family="Helvetica", size=18, weight="bold"), bg="white")
+    label_header.pack(pady=10)
+
+    # Warning text (Phishing explanation)
+    label_text = tk.Label(window, text=popup_text, font=font.Font(family="Helvetica", size=12),
+                          wraplength=450, justify=tk.LEFT, bg="white")
+    label_text.pack(pady=10)
+
+    # Close button
+    close_button = tk.Button(window, text="OK", command=window.destroy, font=font.Font(size=12), bg="red", fg="white")
+    close_button.pack(pady=10)
+
+    window.mainloop()
+
+def bert_model_predict(text):
+    """Uses the trained BERT model to classify text as phishing or safe"""
+    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+    with torch.no_grad():
+        outputs = model(**inputs)
+    
+    logits = outputs.logits
+    prediction = torch.argmax(logits, dim=1).item()  # 1 = phishing, 0 = safe
+    
+    phishing_score = 10 if prediction == 1 else 1  # Assign phishing score
+    explanation = f"⚠️ Phishing Attempt Detected!\n\nScore: {phishing_score}\n\nThis text was classified as {'Phishing' if prediction == 1 else 'Safe'}."
+    
+    return phishing_score, explanation
+
+# main function
+def detect_phishing():
+    """Monitors the screen every 20 seconds and processes the text using BERT"""
+    while not stop_event.is_set():
+        print("🔍 Scanning screen for phishing attempts...")
+        text = get_screen_text()
+        phishing_score, explanation = bert_model_predict(text)
+
+        if phishing_score > MIN_PHISHING_SCORE:
+            print("⚠️ Phishing attempt detected! ⚠️")
+            show_popup(phishing_score, explanation, POPUP_WARNING_TIMEOUT_SECONDS)
+
+        time.sleep(20)  # Runs every 20 seconds
+
+# Run detection in the background
+phishing_thread = threading.Thread(target=detect_phishing, daemon=True)
+phishing_thread.start()
+
+# To stop detection, call stop_event.set()

@@ -1,0 +1,65 @@
+# OCR_Test.py
+# This script captures a screenshot, saves it and the OCR text, and returns the text 
+# It is used to test the OCR functionality of the SafeNetAI application
+
+# Import necessary libraries
+import pyautogui  # For screenshot capture
+import pytesseract  # For OCR
+import os # For file operations
+import time
+from datetime import datetime
+
+# Set the path to Tesseract executable
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+
+# Set up the screenshot directory
+SCREENSHOT_DIR = r"C:\Users\Owner\Pictures\SafeNetAI"
+
+def get_screen_text():
+    """
+    Captures a screenshot, saves it and the OCR text, and returns the text
+    """
+    try:
+        # Create the directory if it doesn't exist
+        if not os.path.exists(SCREENSHOT_DIR):
+            os.makedirs(SCREENSHOT_DIR)
+            print(f"Created directory: {SCREENSHOT_DIR}")
+
+        # Add 5-second delay
+        print("Waiting 5 seconds before taking screenshot...")
+        time.sleep(5)
+
+        # Generate filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_filename = f"screenshot_{timestamp}"
+        screenshot_path = os.path.join(SCREENSHOT_DIR, f"{base_filename}.png")
+        text_path = os.path.join(SCREENSHOT_DIR, f"{base_filename}.txt")
+        
+        # Capture and save the screen
+        print("Taking screenshot...")
+        screenshot = pyautogui.screenshot()
+        screenshot.save(screenshot_path)
+        print(f"Screenshot saved: {screenshot_path}")
+        
+        # Extract text using Tesseract OCR
+        print("Converting screenshot to text...")
+        text = pytesseract.image_to_string(screenshot)
+        
+        # Save the extracted text
+        with open(text_path, 'w', encoding='utf-8') as f:
+            f.write(text)
+        print(f"OCR text saved: {text_path}")
+        
+        return text
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return ""
+
+if __name__ == "__main__":
+    # Get and print the screen text
+    text = get_screen_text()
+    print("\nExtracted text:")
+    print("-" * 50)
+    print(text)
+    print("-" * 50)

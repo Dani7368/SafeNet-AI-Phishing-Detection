@@ -1,0 +1,126 @@
+import subprocess
+import os
+import customtkinter as ctk
+import tkinter as tk
+from tkinter import ttk
+from datetime import datetime
+import random
+import pandas as pd
+
+class SafeNetGUI(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        self.title("SafeNet – Phishing Detection Dashboard")
+        self.geometry("960x600")
+        ctk.set_appearance_mode("Light")
+        ctk.set_default_color_theme("blue")
+
+        self.all_log_entries = []
+        self.configure(padx=20, pady=20)
+
+        title_label = ctk.CTkLabel(self, text="SafeNet Dashnoard" , font=("Arial", 24, "bold"))
+        title_label.pack(pady=(10, 20))
+
+
+        status_frame = ctk.CTkFrame(self, fg_color="transparent")
+        status_frame.pack(pady=(0, 10))
+
+        self.system_status_label = ctk.CTkLabel(status_frame, text="Status: Active", font=("Arial", 14))
+        self.system_status_label.pack(side="left", padx=10)
+
+        self.last_scan_label = ctk.CTkLabel(status_frame, text=f" Last Scan: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", font=("Arial", 14))
+        self.last_scan_label.pack(side="left", padx=10)
+
+        # שורת כפתורים
+        buttons_frame = ctk.CTkFrame(self, fg_color="transparent")
+        buttons_frame.pack(pady=(0, 10))
+
+        self.date_filter_entry = ctk.CTkEntry(buttons_frame, placeholder_text="Date (YYYY-MM-DD)", width=200)
+        self.date_filter_entry.pack(side="left", padx=5)
+
+        self.filter_button = ctk.CTkButton(buttons_frame, text="Filter by Date", command=self.filter_by_date)
+        self.filter_button.pack(side="left", padx=5)
+
+        self.simulate_button = ctk.CTkButton(buttons_frame, text="Add Sample Phishing Message", command=self.add_fake_log_entry)
+        self.simulate_button.pack(side="left", padx=5)
+
+        self.export_button = ctk.CTkButton(buttons_frame, text="Export to Tableau", command=self.export_to_csv)
+        self.export_button.pack(side="left", padx=5)
+
+        # טבלה
+        table_frame = ctk.CTkFrame(self, corner_radius=12)
+        table_frame.pack(fill="both", expand=True, pady=10)
+
+        self.phishing_table = ttk.Treeview(table_frame, columns=("Date", "Time", "Message Content", "Sender"), show="headings", height=12)
+        for col in ["Date", "Time", "Message Content", "Sender"]:
+            self.phishing_table.heading(col, text=col)
+            self.phishing_table.column(col, anchor="center", width=200)
+
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.phishing_table.yview)
+        self.phishing_table.configure(yscroll=scrollbar.set)
+        self.phishing_table.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+    def add_log_from_detection(self, message_data):
+        self.all_log_entries.append(message_data)
+        self.phishing_table.insert("", "end", values=(
+            message_data["date"], message_data["time"],
+            message_data["text"], message_data["sender"]
+        ))
+
+    def add_fake_log_entry(self):
+        now = datetime.now()
+        date_str = now.strftime('%Y-%m-%d')
+        time_str = now.strftime('%H:%M:%S')
+
+        phishing_texts = [
+            "Click here to claim your prize!",
+            "Your account is suspended. Verify now!",
+            "You won a free iPhone!",
+            "Update your info urgently"
+        ]
+        senders = [
+            "support@bank.com",
+            "security@fakebank.org",
+            "no-reply@phishy.net",
+            "+972501234567"
+        ]
+
+        text = random.choice(phishing_texts)
+        sender = random.choice(senders)
+
+        message_data = {
+            "date": date_str,
+            "time": time_str,
+            "text": text,
+            "sender": sender
+        }
+
+        self.add_log_from_detection(message_data)
+
+    def filter_by_date(self):
+        filter_date = self.date_filter_entry.get().strip()
+        self.phishing_table.delete(*self.phishing_table.get_children())
+
+        for entry in self.all_log_entries:
+            if entry["date"] == filter_date:
+                self.phishing_table.insert("", "end", values=(
+                    entry["date"], entry["time"], entry["text"], entry["sender"]
+                ))
+
+    def export_to_csv(self):
+        df = pd.DataFrame(self.all_log_entries)
+        df.to_csv("phishing_logs.csv", index=False, encoding='utf-8-sig')
+        print("📁 קובץ ייצוא נוצר: phishing_logs.csv")
+        
+        def open_tableau_dashboard(self):
+    tableau_file = r"C:\\Users\\YourUser\\Documents\\Tableau\\phishing_dashboard.twbx"  # שנה לנתיב שלך
+    if os.path.exists(tableau_file):
+        subprocess.Popen(["start", tableau_file], shell=True)
+    else:
+        print("Dashboard file not found.")
+
+
+if __name__ == "__main__":
+    app = SafeNetGUI()
+    app.mainloop()
