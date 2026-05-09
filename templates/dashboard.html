@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SafeNet AI — Phishing Detection</title>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg:      #0d1117;
+      --card:    #161b22;
+      --border:  #30363d;
+      --text:    #e6edf3;
+      --muted:   #8b949e;
+      --blue:    #58a6ff;
+      --green:   #3fb950;
+      --red:     #f85149;
+      --orange:  #d29922;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .nav-brand i { color: var(--blue); font-size: 1.4rem; }
+
+    .live-badge {
+      background: var(--green);
+      color: #000;
+      font-size: 0.65rem;
+      font-weight: 800;
+      padding: 2px 9px;
+      border-radius: 20px;
+      letter-spacing: 0.05em;
+      animation: blink 2s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.45; }
+    }
+
+    .nav-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .scan-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: blink 1.4s infinite;
+    }
+
+    /* ── Main layout ── */
+    .main { padding: 28px; max-width: 1400px; margin: 0 auto; }
+
+    /* ── Stats grid ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .stat-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 22px 20px;
+      transition: border-color 0.2s;
+    }
+
+    .stat-card:hover { border-color: var(--blue); }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .stat-value {
+      font-size: 2.1rem;
+      font-weight: 700;
+      line-height: 1;
+      transition: color 0.3s;
+    }
+
+    .blue   { color: var(--blue); }
+    .red    { color: var(--red); }
+    .green  { color: var(--green); }
+    .orange { color: var(--orange); }
+
+    /* ── Alert banner ── */
+    .alert-banner {
+      background: rgba(248, 81, 73, 0.08);
+      border: 1px solid var(--red);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      display: none;
+      align-items: center;
+      gap: 14px;
+      animation: slideDown 0.3s ease;
+    }
+
+    .alert-banner.show { display: flex; }
+
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .alert-icon { color: var(--red); font-size: 1.4rem; flex-shrink: 0; }
+
+    .alert-content { flex: 1; }
+
+    .alert-title {
+      color: var(--red);
+      font-weight: 700;
+      font-size: 0.88rem;
+      margin-bottom: 3px;
+    }
+
+    .alert-msg {
+      color: var(--text);
+      font-size: 0.83rem;
+      opacity: 0.8;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 700px;
+    }
+
+    .btn-dismiss {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 5px 14px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .btn-dismiss:hover { border-color: var(--red); color: var(--red); }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .section-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-right: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .count-pill {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.72rem;
+      padding: 2px 9px;
+      border-radius: 12px;
+      font-weight: 400;
+    }
+
+    input[type="date"] {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 0.83rem;
+      outline: none;
+      transition: border-color 0.2s;
+      color-scheme: dark;
+    }
+
+    input[type="date"]:focus { border-color: var(--blue); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 6px;
+      padding: 7px 14px;
+      font-size: 0.83rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+    }
+
+    .btn:hover                { border-color: var(--blue); color: var(--blue); }
+    .btn:disabled             { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-danger  { border-color: var(--red);   color: var(--red);   background: rgba(248,81,73,0.08); }
+    .btn-danger:hover  { background: rgba(248,81,73,0.18); border-color: var(--red); color: var(--red); }
+
+    .btn-success { border-color: var(--green); color: var(--green); background: rgba(63,185,80,0.08); }
+    .btn-success:hover { background: rgba(63,185,80,0.18); border-color: var(--green); color: var(--green); }
+
+    /* ── Detection table ── */
+    .table-wrap {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead { background: rgba(48,54,61,0.6); }
+
+    th {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 0.73rem;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+
+    td {
+      padding: 12px 16px;
+      font-size: 0.855rem;
+      border-bottom: 1px solid rgba(48,54,61,0.5);
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    tr:hover td { background: rgba(48,54,61,0.3); }
+
+    tr.flash td { animation: rowFlash 0.8s ease; }
+
+    @keyframes rowFlash {
+      0%   { background: rgba(248,81,73,0.18); }
+      100% { background: transparent; }
+    }
+
+    .msg-cell {
+      max-width: 380px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .sender-cell { color: var(--muted); font-size: 0.8rem; }
+
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .score-high { background: rgba(248,81,73,0.12); color: var(--red);    border: 1px solid rgba(248,81,73,0.3); }
+    .score-med  { background: rgba(210,153,34,0.12); color: var(--orange); border: 1px solid rgba(210,153,34,0.3); }
+    .score-low  { background: rgba(63,185,80,0.12);  color: var(--green);  border: 1px solid rgba(63,185,80,0.3); }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state i { font-size: 2.8rem; margin-bottom: 14px; opacity: 0.25; display: block; }
+    .empty-state p { font-size: 0.9rem; }
+
+    /* ── Scan log ── */
+    .scan-log {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      font-family: 'Consolas', 'Courier New', monospace;
+      font-size: 0.78rem;
+      max-height: 130px;
+      overflow-y: auto;
+    }
+
+    .scan-log::-webkit-scrollbar { width: 4px; }
+    .scan-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .log-line { margin-bottom: 3px; line-height: 1.5; }
+    .log-time { color: var(--muted); }
+    .log-safe { color: var(--green); }
+    .log-threat { color: var(--red); }
+    .log-sys { color: var(--blue); }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 560px) {
+      .stats-grid { grid-template-columns: 1fr 1fr; }
+      .main { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ── -->
+<nav class="navbar">
+  <a href="/" class="nav-brand">
+    <i class="fa-solid fa-shield-halved"></i>
+    SafeNet AI
+  </a>
+  <span class="live-badge">● LIVE</span>
+  <div class="nav-right">
+    <span class="scan-dot"></span>
+    <span id="scan-status">Scanning every 20s</span>
+  </div>
+</nav>
+
+<!-- ── Main ── -->
+<div class="main">
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label"><i class="fa-solid fa-magnifying-glass"></i> Total Scans</div>
+      <div class="stat-value blue" id="stat-scans">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label"><i class="fa-solid fa-skull-crossbones"></i> Threats Detected</div>
+      <div class="stat-value red" id="stat-threats">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label"><i class="fa-solid fa-clock-rotate-left"></i> Last Scan</div>
+      <div class="stat-value green" style="font-size:1.3rem;" id="stat-last">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label"><i class="fa-solid fa-chart-pie"></i> Detection Rate</div>
+      <div class="stat-value orange" id="stat-rate">0.0%</div>
+    </div>
+  </div>
+
+  <!-- Alert banner -->
+  <div class="alert-banner" id="alert-banner">
+    <div class="alert-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+    <div class="alert-content">
+      <div class="alert-title">⚠️ Phishing Attempt Detected!</div>
+      <div class="alert-msg" id="alert-msg">—</div>
+    </div>
+    <button class="btn-dismiss" onclick="dismissAlert()">Dismiss</button>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="section-title">
+      <i class="fa-solid fa-table-list"></i>
+      Detection Log
+      <span class="count-pill" id="count-pill">0 entries</span>
+    </div>
+    <input type="date" id="date-filter" title="Filter by date">
+    <button class="btn" onclick="applyFilter()"><i class="fa-solid fa-filter"></i> Filter</button>
+    <button class="btn" onclick="clearFilter()"><i class="fa-solid fa-xmark"></i> Clear</button>
+    <button class="btn btn-danger" id="sim-btn" onclick="simulatePhishing()">
+      <i class="fa-solid fa-bug"></i> Simulate Phishing
+    </button>
+    <button class="btn btn-success" onclick="exportCSV()">
+      <i class="fa-solid fa-file-csv"></i> Export CSV
+    </button>
+  </div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Message</th>
+          <th>Sender</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Scan log -->
+  <div class="scan-log" id="scan-log">
+    <div class="log-line log-sys">[SafeNet AI] System initialized. Real-time monitoring active.</div>
+  </div>
+
+</div>
+
+<script>
+  /* ── State ── */
+  const socket = io();
+  let allDetections = [];
+  let alertTimer = null;
+
+  /* ── Socket events ── */
+  socket.on('connect', () => log('Connected to SafeNet server.', 'sys'));
+
+  socket.on('scan_update', data => {
+    set('stat-scans',   data.total_scans);
+    set('stat-last',    data.last_scan);
+    set('stat-threats', data.threats_detected);
+    updateRate(data.total_scans, data.threats_detected);
+
+    const label = data.is_phishing
+      ? `⚠️ Threat! Score ${data.score}/10`
+      : `✓ Clean — Score ${data.score}/10`;
+    log(`Scan #${data.total_scans}: ${label}`, data.is_phishing ? 'threat' : 'safe');
+  });
+
+  socket.on('phishing_detected', entry => {
+    allDetections.unshift(entry);
+    renderTable(allDetections);
+    updateCount();
+    showAlert(entry);
+    // bump threats counter (scan_update may already have done it, but simulate won't trigger scan_update)
+    const cur = parseInt(get('stat-threats')) || 0;
+    set('stat-threats', Math.max(cur, allDetections.length));
+  });
+
+  /* ── Render ── */
+  function renderTable(entries) {
+    const tbody = document.getElementById('tbody');
+    if (!entries.length) {
+      tbody.innerHTML = `
+        <tr><td colspan="5">
+          <div class="empty-state">
+            <i class="fa-solid fa-shield-check"></i>
+            <p>No threats detected yet — scanner is active.</p>
+          </div>
+        </td></tr>`;
+      return;
+    }
+    tbody.innerHTML = entries.map((e, i) => `
+      <tr class="${i === 0 ? 'flash' : ''}">
+        <td>${e.date}</td>
+        <td>${e.time}</td>
+        <td><div class="msg-cell" title="${esc(e.text)}">${esc(e.text)}</div></td>
+        <td class="sender-cell">${esc(e.sender)}</td>
+        <td>${badge(e.score)}</td>
+      </tr>`).join('');
+  }
+
+  function badge(score) {
+    const cls = score >= 7 ? 'score-high' : score >= 4 ? 'score-med' : 'score-low';
+    const icon = score >= 7
+      ? 'fa-circle-exclamation'
+      : score >= 4 ? 'fa-triangle-exclamation' : 'fa-check';
+    return `<span class="score-badge ${cls}"><i class="fa-solid ${icon}"></i> ${score}/10</span>`;
+  }
+
+  /* ── Alert ── */
+  function showAlert(entry) {
+    document.getElementById('alert-msg').textContent =
+      `Score ${entry.score}/10 — ${entry.text.substring(0, 110)}${entry.text.length > 110 ? '...' : ''}`;
+    document.getElementById('alert-banner').classList.add('show');
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(dismissAlert, 12000);
+  }
+
+  function dismissAlert() {
+    document.getElementById('alert-banner').classList.remove('show');
+  }
+
+  /* ── Filter ── */
+  function applyFilter() {
+    const date = document.getElementById('date-filter').value;
+    if (!date) return;
+    renderTable(allDetections.filter(d => d.date === date));
+  }
+
+  function clearFilter() {
+    document.getElementById('date-filter').value = '';
+    renderTable(allDetections);
+    updateCount();
+  }
+
+  /* ── Actions ── */
+  async function simulatePhishing() {
+    const btn = document.getElementById('sim-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Simulating...';
+    try {
+      await fetch('/api/simulate', { method: 'POST' });
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-bug"></i> Simulate Phishing';
+      }, 1200);
+    }
+  }
+
+  function exportCSV() { window.location.href = '/api/export'; }
+
+  /* ── Helpers ── */
+  function set(id, val) { document.getElementById(id).textContent = val; }
+  function get(id)      { return document.getElementById(id).textContent; }
+  function esc(s)       { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function updateCount() {
+    document.getElementById('count-pill').textContent =
+      `${allDetections.length} ${allDetections.length === 1 ? 'entry' : 'entries'}`;
+  }
+  function updateRate(scans, threats) {
+    const r = scans > 0 ? ((threats / scans) * 100).toFixed(1) : '0.0';
+    set('stat-rate', r + '%');
+  }
+  function log(msg, type = 'safe') {
+    const el = document.getElementById('scan-log');
+    const t = new Date().toLocaleTimeString();
+    const cls = type === 'threat' ? 'log-threat' : type === 'sys' ? 'log-sys' : 'log-safe';
+    const line = document.createElement('div');
+    line.className = `log-line ${cls}`;
+    line.innerHTML = `<span class="log-time">[${t}]</span> ${msg}`;
+    el.appendChild(line);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  /* ── Init: load existing data ── */
+  Promise.all([
+    fetch('/api/stats').then(r => r.json()),
+    fetch('/api/detections').then(r => r.json()),
+  ]).then(([stats, dets]) => {
+    set('stat-scans',   stats.total_scans);
+    set('stat-threats', stats.threats_detected);
+    set('stat-last',    stats.last_scan);
+    set('stat-rate',    stats.detection_rate);
+    allDetections = dets;
+    renderTable(allDetections);
+    updateCount();
+  });
+
+  /* Initial empty render */
+  renderTable([]);
+</script>
+</body>
+</html>
