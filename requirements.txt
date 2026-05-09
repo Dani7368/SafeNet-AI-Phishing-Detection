@@ -1,6 +1,6 @@
-flask==3.0.0
+flask==3.0.3
 flask-socketio==5.3.6
 pytesseract==0.3.10
-Pillow==10.2.0
-eventlet==0.35.2
+Pillow==10.4.0
+eventlet==0.36.1
 gunicorn==21.2.0
